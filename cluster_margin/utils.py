@@ -172,12 +172,12 @@ def get_sorted_cluster_list(clust, set_unlabelled_idxs):
     return clust_list
 
 
-test = iteration(data, 40, km=50, kt=10)
-plt.scatter(data["x"].to_numpy()[test[0]["label_idxs"]], data["y"].to_numpy()[test[0]["label_idxs"]], c="red", s=10, label="train")
-plt.scatter(data["x"].to_numpy()[test[2]], data["y"].to_numpy()[test[2]], c="black", s=10, label="unlabelled set")
-plt.scatter(*test[3].T, color="blue", marker=".", label="margin selected")
-plt.scatter(*test[4].T, color="yellow", marker="x", label="batch selected")
-plt.legend()
+#test = iteration(data, 40, km=50, kt=10)
+#plt.scatter(data["x"].to_numpy()[test[0]["label_idxs"]], data["y"].to_numpy()[test[0]["label_idxs"]], c="red", s=10, label="train")
+#plt.scatter(data["x"].to_numpy()[test[2]], data["y"].to_numpy()[test[2]], c="black", s=10, label="unlabelled set")
+#plt.scatter(*test[3].T, color="blue", marker=".", label="margin selected")
+#plt.scatter(*test[4].T, color="yellow", marker="x", label="batch selected")
+#plt.legend()
 
 
 def real_iteration(pool, init, labelled_idxs, n=30, km=30, kt=10):
