@@ -1,20 +1,19 @@
 import random
-from abc import ABC, abstractmethod
-from typing import Any
+from random import shuffle
+from typing import Optional
 
 import numpy as np
 import torch
+from loguru import logger
 from sklearn.cluster import AgglomerativeClustering
 from torch.utils.data import Sampler
-from cluster_margin.utils import random_sample, get_mask
-from random import shuffle 
-from cluster_margin.utils import get_dummy_data
-from loguru import logger 
-from typing import Optional
+
 from cluster_margin.cluster_margin import BaseLearner
+from cluster_margin.utils import get_dummy_data, get_mask, random_sample
+
 
 class Dummy(BaseLearner):
-    # Dummy model for testing purposes 
+    # Dummy model for testing purposes
     data = get_dummy_data()
 
     def fit(self, **fit_kwargs):
@@ -29,92 +28,93 @@ class Dummy(BaseLearner):
     def teach(self, **teach_kwargs):
         return None
 
-    def predict_proba(self, n_of_samples : int = 10,  d =5 ,**predict_proba_kwargs):
+    def predict_proba(self, n_of_samples: int = 10, d=5, **predict_proba_kwargs):
         a = torch.rand((n_of_samples, d))
         a = a / a.sum(dim=1, keepdim=True)
-        return a 
-
-     
+        return a
 
 
 class ClusterMargin:
-    def __init__(self,
-                pool,
-                model : BaseLearner = Dummy(),
-                labelled_sample_size : int = 30, 
-                distance_threshold: float = 1.0,
-                km: int = 10,
-                k_batch: int = 5, 
-                iterations : int = 10,
-                seed : int = 42,
-                verbose : bool = False):
+    def __init__(
+        self,
+        pool,
+        model: BaseLearner = Dummy(),
+        labelled_sample_size: int = 30,
+        distance_threshold: float = 1.0,
+        km: int = 10,
+        k_batch: int = 5,
+        iterations: int = 10,
+        seed: int = 42,
+        verbose: bool = False,
+    ):
         assert k_batch < km, "k_batch must be smaller than km"
         self.pool = pool
-        self.model = model 
+        self.model = model
         self.number_of_samples = len(pool)
         self.p = labelled_sample_size
         self._km = km
         self._k_batch = k_batch
         self._distance_threshold = distance_threshold
-        self._first_iteration = True 
+        self._first_iteration = True
         self._current_iteration = 0
         self.max_iterations = iterations
         self.verbose = verbose
         self.seed(seed)
 
     def seed(self, seed=42):
-        if self.verbose: logger.info(f"Setting seed to {seed}")
+        if self.verbose:
+            logger.info(f"Setting seed to {seed}")
         np.random.seed(seed)
         random.seed(seed)
         torch.manual_seed(seed)
 
     def prepare_embedding(self):
-        #self.clustering = AgglomerativeClustering(n_clusters=None, linkage="average",
+        # self.clustering = AgglomerativeClustering(n_clusters=None, linkage="average",
         #                                           distance_threshold=self.distance_threshold).fit(self.pool)
         x = self.pool["x"].to_numpy()
         y = self.pool["y"].to_numpy()
-        self.clustering = AgglomerativeClustering(n_clusters=None,
-                                                   linkage="average",
-                                                   distance_threshold=self.distance_threshold).fit(
-                                                np.vstack((x, y)).T
-                                                )
+        self.clustering = AgglomerativeClustering(n_clusters=None, linkage="average", distance_threshold=self.distance_threshold).fit(
+            np.vstack((x, y)).T
+        )
 
     def _initialize_embedding(self):
         # initialize the embedding must have the model embedding implemented, this is for a Dummy model already prepared
-        self.training_pool , self.labelled_idxs = random_sample(self.pool.to_numpy(), self.p)
-        if self.verbose: logger.info("Initializing embedding, randomly selected idxs : {}".format(self.labelled_idxs))
+        self.training_pool, self.labelled_idxs = random_sample(self.pool.to_numpy(), self.p)
+        if self.verbose:
+            logger.info("Initializing embedding, randomly selected idxs : {}".format(self.labelled_idxs))
         self.prepare_embedding()
 
     def get_unlabelled(self):
         all_idxs = np.arange(self.number_of_samples)
         mask = np.ones(len(all_idxs), dtype=bool)
         mask[self.labelled_idxs] = False
-        self.unlabelled_idxs  = all_idxs[mask]
+        self.unlabelled_idxs = all_idxs[mask]
         return self.unlabelled_idxs
-    
+
     def predict_proba(self, idxs):
-        if self.verbose: logger.info("Predicting probabilities for idxs {}".format(idxs))
+        if self.verbose:
+            logger.info("Predicting probabilities for idxs {}".format(idxs))
         probs = self.model.predict_proba(len(idxs))
         return probs
-    
 
     def get_M(self):
         probs = self.predict_proba(self.unlabelled_idxs)
-        if self.verbose: logger.info("Predicted probabilities for unlabelled idxs {} ".format(probs))
+        if self.verbose:
+            logger.info("Predicted probabilities for unlabelled idxs {} ".format(probs))
         if isinstance(probs, torch.Tensor):
             probs_sorted, idxs = probs.sort(descending=True)
             U = probs_sorted[:, 0] - probs_sorted[:, 1]
-            M = self.unlabelled_idxs[U.sort()[1][:self.km]]
+            M = self.unlabelled_idxs[U.sort()[1][: self.km]]
         else:
             probs_sorted, idxs = np.sort(probs, axis=1)[:, ::-1]  # invert columns
             U = probs_sorted[:, 0] - probs_sorted[:, 1]
-            M =  self.unlabelled_idxs[np.argsort(U)[:self.km]]
+            M = self.unlabelled_idxs[np.argsort(U)[: self.km]]
         self.M_idx = M
-        if self.verbose: logger.info("Querying idxs {}".format(M))
+        if self.verbose:
+            logger.info("Querying idxs {}".format(M))
         return M
-        
-    def _get_sorted_cluster_list(self):
 
+    def _get_sorted_cluster_list(self):
         clust_list = [[] for _ in range(self.clustering.n_clusters_)]
         for idx in self.M_idx:
             cluster_idx = self.clustering.labels_[idx]
@@ -123,10 +123,12 @@ class ClusterMargin:
         # remove empty clusters
         clust_list = [x for x in clust_list if x != []]
         self.cluster_list = clust_list
-        if self.verbose: logger.info("Sorted cluster list {}".format(clust_list))
+        if self.verbose:
+            logger.info("Sorted cluster list {}".format(clust_list))
 
     def round_robin_sampling(self):
-        if self.verbose: logger.info("Round robin sampling")
+        if self.verbose:
+            logger.info("Round robin sampling")
         index_select = []
         cluster_index = 0
         k = self.k_batch
@@ -138,17 +140,19 @@ class ClusterMargin:
             if cluster_index < len(self.cluster_list) - 1:
                 cluster_index += 1
             else:
-                if len(self.cluster_list[cluster_index]) == 0:  
+                if len(self.cluster_list[cluster_index]) == 0:
                     break
                 cluster_index = 0
         return index_select
-    
+
     def update(self, idxs):
         self.labelled_idxs = np.concatenate((self.labelled_idxs, idxs))
-        if self.verbose: logger.info("New len labelled idxs {}".format(len(self.labelled_idxs)))
-    
+        if self.verbose:
+            logger.info("New len labelled idxs {}".format(len(self.labelled_idxs)))
+
     def _do_iteration(self):
-        if self.verbose: logger.info("Starting iteration {}".format(self._current_iteration))
+        if self.verbose:
+            logger.info("Starting iteration {}".format(self._current_iteration))
         if self._first_iteration:
             self._first_iteration = False
             self._initialize_embedding()
@@ -156,17 +160,17 @@ class ClusterMargin:
         self.get_M()
         self._get_sorted_cluster_list()
         idxs = self.round_robin_sampling()
-        return idxs 
-    
+        return idxs
+
     def __iter__(self):
         return self
-    
+
     def __next__(self):
         if self._current_iteration >= self.max_iterations:
             raise StopIteration
         return self.query(self.k_batch)
-    
-    def query_iterator(self, batch_size : int = 10, iterations : int = 10):
+
+    def query_iterator(self, batch_size: int = 10, iterations: int = 10):
         while self._current_iteration < iterations:
             self.k_batch = batch_size
             queried_idxs = self._do_iteration()
@@ -174,14 +178,13 @@ class ClusterMargin:
             yield queried_idxs
             self._current_iteration += 1
 
-
-    def query(self, batch_size : Optional[int] = None):
+    def query(self, batch_size: Optional[int] = None):
         self.k_batch = batch_size
         queried_idxs = self._do_iteration()
         self.update(queried_idxs)
         self._current_iteration += 1
         return queried_idxs
-    
+
     def get_sorted_cluster_list(clust, set_unlabelled_idxs):
         clust_list = [[] for _ in range(clust.n_clusters_)]
         for idx in set_unlabelled_idxs:
@@ -190,7 +193,7 @@ class ClusterMargin:
         clust_list.sort(key=lambda x: len(x))
         # remove empty clusters
         clust_list = [x for x in clust_list if x != []]
-        return clust_list    
+        return clust_list
 
     @property
     def km(self):
