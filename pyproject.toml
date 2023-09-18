@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mlip"
+name = "cluster_margin"
 dynamic = ["version"]
 description = "Batch Active Learning at scale"
 authors = [{ name = "Cristian Gabellini", email = "cristian@valencediscovery.com" }]

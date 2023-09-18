@@ -2,7 +2,7 @@ from random import shuffle
 from typing import Union
 
 import datamol as dm
-import matplotlib.pyplot as plt
+
 import numpy as np
 import torch
 from scipy.cluster import hierarchy
@@ -89,7 +89,8 @@ def initialization_step(pool, n=30):
     labeled_examples, idxs = random_sample(pool.to_numpy(), n)
     x = pool["x"].to_numpy()
     y = pool["y"].to_numpy()
-    clust = AgglomerativeClustering(n_clusters=None, linkage="average", distance_threshold=0.5).fit(np.vstack((x, y)).T)
+    clust = AgglomerativeClustering(n_clusters=None, linkage="average",
+                                     distance_threshold=0.5).fit(np.vstack((x, y)).T)
     return {"label_examples": labeled_examples, "label_idxs": idxs, "clustering": clust}
 
 
@@ -132,11 +133,11 @@ def iteration(pool, n=30, km=30, kt=10):
     # return examples[get_M(pool, unlabelled_idxs)]
     M_idxs = get_M(pool, unlabelled_idxs, km)
     cluster_list = get_sorted_cluster_list(init["clustering"], M_idxs)
-    idxs = round_robin_sampling(cluster_list, kt)
+    idxs = round_robin_sampling_shuffled(cluster_list, kt)
     return init, unlabelled_examples, unlabelled_idxs, examples[get_M(pool, unlabelled_idxs, km)], examples[idxs]
 
 
-def round_robin_sampling(cluster_list, k):
+def round_robin_sampling_shuffled(cluster_list, k):
     index_select = []
     cluster_index = 0
     # on each cluster select one element, then go to the next cluster by size
@@ -172,20 +173,13 @@ def get_sorted_cluster_list(clust, set_unlabelled_idxs):
     return clust_list
 
 
-#test = iteration(data, 40, km=50, kt=10)
-#plt.scatter(data["x"].to_numpy()[test[0]["label_idxs"]], data["y"].to_numpy()[test[0]["label_idxs"]], c="red", s=10, label="train")
-#plt.scatter(data["x"].to_numpy()[test[2]], data["y"].to_numpy()[test[2]], c="black", s=10, label="unlabelled set")
-#plt.scatter(*test[3].T, color="blue", marker=".", label="margin selected")
-#plt.scatter(*test[4].T, color="yellow", marker="x", label="batch selected")
-#plt.legend()
-
 
 def real_iteration(pool, init, labelled_idxs, n=30, km=30, kt=10):
     unlabelled_examples, unlabelled_idxs = get_unlabelled(pool.to_numpy(), labelled_idxs)
     # return examples[get_M(pool, unlabelled_idxs)]
     M_idxs = get_M(pool, unlabelled_idxs, km)
     cluster_list = get_sorted_cluster_list(init["clustering"], M_idxs)
-    idxs = round_robin_sampling(cluster_list, kt)
+    idxs = round_robin_sampling_shuffled(cluster_list, kt)
     return idxs
 
 
@@ -200,3 +194,10 @@ def cluster_margin(pool, n=30, km=30, kt=10, it=1):
         init["label_idxs"] = np.concatenate((init["label_idxs"], new_idxs))
         tmp.append(examples[new_idxs])
     return tmp
+
+#test = iteration(data, 40, km=50, kt=10)
+#plt.scatter(data["x"].to_numpy()[test[0]["label_idxs"]], data["y"].to_numpy()[test[0]["label_idxs"]], c="red", s=10, label="train")
+#plt.scatter(data["x"].to_numpy()[test[2]], data["y"].to_numpy()[test[2]], c="black", s=10, label="unlabelled set")
+#plt.scatter(*test[3].T, color="blue", marker=".", label="margin selected")
+#plt.scatter(*test[4].T, color="yellow", marker="x", label="batch selected")
+#plt.legend()
